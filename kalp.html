@@ -1,0 +1,311 @@
+
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#030003">
+<title>For You ❤️</title>
+
+<style>
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #030003;
+}
+
+body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: Arial, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+}
+
+canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.hint {
+    position: absolute;
+    bottom: max(25px, env(safe-area-inset-bottom));
+    color: rgba(255, 110, 150, .25);
+    font-size: 10px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    animation: fade 4s ease forwards;
+    animation-delay: 7s;
+    opacity: 0;
+    pointer-events: none;
+}
+
+@keyframes fade {
+    to { opacity: 1; }
+}
+</style>
+</head>
+
+<body>
+<canvas id="scene"></canvas>
+<div class="hint">made with love ♥</div>
+
+<script>
+const canvas = document.getElementById("scene");
+const ctx = canvas.getContext("2d");
+
+let w, h, dpr, scale, cx, cy;
+let start = performance.now();
+let particles = [];
+let sparks = [];
+let pointerPulse = 0;
+
+function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    w = window.innerWidth;
+    h = window.innerHeight;
+
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    cx = w / 2;
+    cy = h * 0.47;
+    scale = Math.min(w / 39, h / 49);
+}
+
+function heart(t) {
+    return {
+        x: 16 * Math.sin(t) ** 3,
+        y: -(13 * Math.cos(t)
+           - 5 * Math.cos(2*t)
+           - 2 * Math.cos(3*t)
+           - Math.cos(4*t))
+    };
+}
+
+function point(t, factor = 1) {
+    const p = heart(t);
+    return {
+        x: cx + p.x * scale * factor,
+        y: cy + p.y * scale * factor
+    };
+}
+
+function makeParticles() {
+    particles = [];
+    sparks = [];
+
+    for (let i = 0; i < 520; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const r = Math.pow(Math.random(), .65);
+
+        particles.push({
+            a,
+            r,
+            size: Math.random() * 1.5 + .2,
+            phase: Math.random() * 6.28,
+            speed: .15 + Math.random() * .7,
+            drift: (Math.random() - .5) * 9
+        });
+    }
+
+    for (let i = 0; i < 32; i++) {
+        sparks.push({
+            t: Math.random() * Math.PI * 2,
+            offset: Math.random() * 1.8,
+            size: .5 + Math.random() * 1.8,
+            phase: Math.random() * 6.28
+        });
+    }
+}
+
+function glowLine(a, b, color, width, blur) {
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = blur;
+    ctx.stroke();
+}
+
+function draw(now) {
+    const elapsed = (now - start) / 1000;
+    const progress = Math.min(elapsed / 5.5, 1);
+    const reveal = progress * progress * (3 - 2 * progress);
+    const pulse = 1 + Math.sin(now / 620) * .012
+                    + pointerPulse * .025;
+
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = "#030003";
+    ctx.fillRect(0, 0, w, h);
+
+    // Subtle red atmospheric glow
+    const halo = ctx.createRadialGradient(
+        cx, cy, 0, cx, cy, Math.min(w, h) * .55
+    );
+    halo.addColorStop(0, "rgba(95,0,22,0.13)");
+    halo.addColorStop(1, "rgba(0,0,0,0)");
+
+    ctx.fillStyle = halo;
+    ctx.fillRect(0, 0, w, h);
+
+    // Floating dust
+    ctx.save();
+    for (const p of particles) {
+        const drift = Math.sin(now / 1600 * p.speed + p.phase);
+        const x = cx + Math.cos(p.a) * p.r * w * .48
+                    + drift * p.drift;
+        const y = cy + Math.sin(p.a) * p.r * h * .43
+                    - (elapsed * 5 * p.speed % 18);
+
+        const alpha = (.12 + .3 *
+            (Math.sin(now / 700 + p.phase) + 1) / 2) * reveal;
+
+        ctx.fillStyle = `rgba(255,40,85,${alpha})`;
+        ctx.beginPath();
+        ctx.arc(x, (y + h + 18) % h, p.size, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.restore();
+
+    // Heart outline gradually draws itself
+    const count = 440;
+    const visible = Math.floor(count * reveal);
+    const path = [];
+
+    for (let i = 0; i <= count; i++) {
+        const a = point(i / count * Math.PI * 2, pulse);
+        path.push(a);
+    }
+
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    for (let layer = 0; layer < 3; layer++) {
+        ctx.beginPath();
+
+        for (let i = 0; i <= visible; i++) {
+            const p = path[i];
+            if (i === 0) ctx.moveTo(p.x, p.y);
+            else ctx.lineTo(p.x, p.y);
+        }
+
+        const colors = [
+            "rgba(255,0,45,0.12)",
+            "rgba(255,20,65,0.4)",
+            "rgba(255,95,130,0.92)"
+        ];
+
+        ctx.strokeStyle = colors[layer];
+        ctx.lineWidth = [12, 4, 1.1][layer];
+        ctx.shadowColor = "#ff174d";
+        ctx.shadowBlur = [25, 16, 7][layer];
+        ctx.stroke();
+    }
+
+    // Inner echo lines
+    for (let ring = 1; ring <= 3; ring++) {
+        ctx.beginPath();
+        const factor = 1 - ring * .035;
+
+        for (let i = 0; i <= visible; i++) {
+            const p = point(i / count * Math.PI * 2,
+                            factor * pulse);
+            if (i === 0) ctx.moveTo(p.x, p.y);
+            else ctx.lineTo(p.x, p.y);
+        }
+
+        ctx.strokeStyle = `rgba(255,25,70,${.22 / ring})`;
+        ctx.lineWidth = .65;
+        ctx.shadowBlur = 5;
+        ctx.stroke();
+    }
+
+    // Moving bright point on the heart
+    if (reveal > .1) {
+        const t = (now / 5000) % (Math.PI * 2);
+        const p = point(t, pulse);
+
+        const light = ctx.createRadialGradient(
+            p.x, p.y, 0, p.x, p.y, 20
+        );
+        light.addColorStop(0, "rgba(255,230,240,0.95)");
+        light.addColorStop(.15, "rgba(255,30,80,0.7)");
+        light.addColorStop(1, "rgba(255,0,30,0)");
+
+        ctx.fillStyle = light;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 20, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Tiny glints along the heart
+    for (const s of sparks) {
+        const p = point(s.t + Math.sin(now / 1800 + s.phase) * .025,
+                        pulse + s.offset * .004);
+        const alpha = (.15 + .5 *
+            (Math.sin(now / 500 + s.phase) + 1) / 2) * reveal;
+
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = "#ffb6cb";
+        ctx.shadowColor = "#ff174d";
+        ctx.shadowBlur = 9;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, s.size, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+
+    // Hidden message: intentionally extremely low contrast.
+    // It becomes easier to notice when the viewer squints.
+    if (reveal > .7) {
+        const fadeIn = Math.min((reveal - .7) * 2.5, 1);
+        const fontSize = Math.max(11, Math.min(17, w * .042));
+
+        ctx.save();
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.font = `500 ${fontSize}px Arial, sans-serif`;
+        ctx.letterSpacing = "4px";
+
+        // Almost black burgundy on black
+        ctx.fillStyle = `rgba(100, 5, 25, ${.30 * fadeIn})`;
+        ctx.shadowColor = "#8c001f";
+        ctx.shadowBlur = 1;
+
+        ctx.fillText("I LOVE YOU", cx, cy + scale * 2.1);
+
+        ctx.font = `${fontSize * .85}px Arial`;
+        ctx.fillStyle = `rgba(125, 8, 35, ${.25 * fadeIn})`;
+        ctx.fillText("♥", cx, cy + scale * 4.1);
+        ctx.restore();
+    }
+
+    pointerPulse *= .96;
+    requestAnimationFrame(draw);
+}
+
+function pulseHeart() {
+    pointerPulse = 1;
+}
+
+canvas.addEventListener("pointerdown", pulseHeart);
+window.addEventListener("resize", resize);
+
+resize();
+makeParticles();
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>
